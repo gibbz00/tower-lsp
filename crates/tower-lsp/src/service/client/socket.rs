@@ -9,7 +9,7 @@ use futures::sink::Sink;
 use futures::stream::{FusedStream, Stream, StreamExt};
 
 use super::{ExitedError, Pending, ServerState, State};
-use crate::jsonrpc::{Request, Response};
+use tower_lsp_json_rpc::{Request, Response};
 
 /// A loopback channel for server-to-client communication.
 #[derive(Debug)]

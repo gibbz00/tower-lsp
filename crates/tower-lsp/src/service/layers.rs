@@ -9,7 +9,7 @@ use tower::{Layer, Service};
 use tracing::{info, warn};
 
 use super::ExitedError;
-use crate::jsonrpc::{not_initialized_error, Error, Id, Request, Response};
+use tower_lsp_json_rpc::{not_initialized_error, Error, Id, Request, Response};
 
 use super::client::Client;
 use super::pending::Pending;

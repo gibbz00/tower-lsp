@@ -1,7 +1,7 @@
 use serde_json::Value;
 use tokio::net::{TcpListener, TcpStream};
-use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
+use tower_lsp::Result;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 #[derive(Debug)]

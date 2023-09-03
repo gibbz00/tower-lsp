@@ -16,8 +16,8 @@ use tower::Service;
 use tracing::error;
 
 use crate::codec::{LanguageServerCodec, ParseError};
-use crate::jsonrpc::{Error, Id, Message, Request, Response};
 use crate::service::{ClientSocket, RequestStream, ResponseSink};
+use tower_lsp_json_rpc::{Error, Id, Message, Request, Response};
 
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
 const MESSAGE_QUEUE_SIZE: usize = 100;

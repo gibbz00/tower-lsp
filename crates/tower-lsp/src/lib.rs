@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```rust
-//! use tower_lsp::jsonrpc::Result;
+//! use tower_lsp_json_rpc::Result;
 //! use tower_lsp::lsp_types::*;
 //! use tower_lsp::{Client, LanguageServer, LspService, Server};
 //!
@@ -95,9 +95,10 @@ use serde_json::Value;
 use tower_lsp_macros::rpc;
 use tracing::{error, warn};
 
-use self::jsonrpc::{Error, Result};
-
-pub mod jsonrpc;
+pub use tower_lsp_json_rpc::Response;
+pub use tower_lsp_json_rpc::{Error, ErrorCode, Result};
+pub use tower_lsp_json_rpc::{FromParams, IntoResponse, Method};
+pub use tower_lsp_json_rpc::{Request, RequestBuilder};
 
 mod codec;
 mod service;

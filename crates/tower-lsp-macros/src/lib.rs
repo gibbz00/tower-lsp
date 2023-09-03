@@ -151,7 +151,7 @@ fn gen_server_router(trait_name: &syn::Ident, methods: &[MethodCall]) -> proc_ma
             use serde_json::Value;
 
             use super::#trait_name;
-            use crate::jsonrpc::{Result, Router};
+            use tower_lsp_json_rpc::{Result, Router};
             use crate::service::{layers, Client, Pending, ServerState, State, ExitedError};
 
             fn cancel_request(params: CancelParams, p: &Pending) -> Ready<()> {

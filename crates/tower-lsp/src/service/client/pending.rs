@@ -7,7 +7,7 @@ use dashmap::{mapref::entry::Entry, DashMap};
 use futures::channel::oneshot;
 use tracing::warn;
 
-use crate::jsonrpc::{Id, Response};
+use tower_lsp_json_rpc::{Id, Response};
 
 /// A hashmap containing pending client requests, keyed by request ID.
 pub struct Pending(DashMap<Id, Vec<oneshot::Sender<Response>>>);

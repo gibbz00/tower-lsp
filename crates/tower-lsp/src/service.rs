@@ -13,10 +13,10 @@ use futures::future::{self, BoxFuture, FutureExt};
 use serde_json::Value;
 use tower::Service;
 
-use crate::jsonrpc::{
+use crate::LanguageServer;
+use tower_lsp_json_rpc::{
     Error, ErrorCode, FromParams, IntoResponse, Method, Request, Response, Router,
 };
-use crate::LanguageServer;
 
 pub(crate) mod layers;
 
@@ -169,7 +169,7 @@ impl<S: LanguageServer> LspServiceBuilder<S> {
     ///
     /// ```rust
     /// use serde_json::{json, Value};
-    /// use tower_lsp::jsonrpc::Result;
+    /// use tower_lsp_json_rpc::Result;
     /// use tower_lsp::lsp_types::*;
     /// use tower_lsp::{LanguageServer, LspService};
     ///
@@ -254,7 +254,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
-    use crate::jsonrpc::Result;
+    use tower_lsp_json_rpc::Result;
 
     #[derive(Debug)]
     struct Mock;

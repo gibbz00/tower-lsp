@@ -9,7 +9,7 @@ use futures::future::{self, Either};
 use tracing::{debug, info};
 
 use super::ExitedError;
-use crate::jsonrpc::{Error, Id, Response};
+use tower_lsp_json_rpc::{Error, Id, Response};
 
 /// A hashmap containing pending server requests, keyed by request ID.
 pub struct Pending(Arc<DashMap<Id, future::AbortHandle>>);

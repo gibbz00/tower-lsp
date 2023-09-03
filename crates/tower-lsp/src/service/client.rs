@@ -21,7 +21,7 @@ use tracing::{error, trace};
 use self::pending::Pending;
 use super::state::{ServerState, State};
 use super::ExitedError;
-use crate::jsonrpc::{self, Error, ErrorCode, Id, Request, Response};
+use tower_lsp_json_rpc::{self, Error, ErrorCode, Id, Request, Response, Result as JsonRpcResult};
 
 mod pending;
 mod socket;
@@ -90,10 +90,7 @@ impl Client {
     /// immediately return `Err` with JSON-RPC error code `-32002` ([read more]).
     ///
     /// [read more]: https://microsoft.github.io/language-server-protocol/specification#initialize
-    pub async fn register_capability(
-        &self,
-        registrations: Vec<Registration>,
-    ) -> jsonrpc::Result<()> {
+    pub async fn register_capability(&self, registrations: Vec<Registration>) -> JsonRpcResult<()> {
         self.send_request::<RegisterCapability>(RegistrationParams { registrations })
             .await
     }
@@ -113,7 +110,7 @@ impl Client {
     pub async fn unregister_capability(
         &self,
         unregisterations: Vec<Unregistration>,
-    ) -> jsonrpc::Result<()> {
+    ) -> JsonRpcResult<()> {
         self.send_request::<UnregisterCapability>(UnregistrationParams { unregisterations })
             .await
     }
@@ -146,7 +143,7 @@ impl Client {
         typ: MessageType,
         message: M,
         actions: Option<Vec<MessageActionItem>>,
-    ) -> jsonrpc::Result<Option<MessageActionItem>> {
+    ) -> JsonRpcResult<Option<MessageActionItem>> {
         self.send_request_unchecked::<ShowMessageRequest>(ShowMessageRequestParams {
             typ,
             message: message.to_string(),
@@ -186,7 +183,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.16.0.
-    pub async fn show_document(&self, params: ShowDocumentParams) -> jsonrpc::Result<bool> {
+    pub async fn show_document(&self, params: ShowDocumentParams) -> JsonRpcResult<bool> {
         let response = self.send_request::<ShowDocument>(params).await?;
         Ok(response.success)
     }
@@ -235,7 +232,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.16.0.
-    pub async fn code_lens_refresh(&self) -> jsonrpc::Result<()> {
+    pub async fn code_lens_refresh(&self) -> JsonRpcResult<()> {
         self.send_request::<CodeLensRefresh>(()).await
     }
 
@@ -261,7 +258,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.16.0.
-    pub async fn semantic_tokens_refresh(&self) -> jsonrpc::Result<()> {
+    pub async fn semantic_tokens_refresh(&self) -> JsonRpcResult<()> {
         self.send_request::<SemanticTokensRefresh>(()).await
     }
 
@@ -286,7 +283,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.17.0.
-    pub async fn inline_value_refresh(&self) -> jsonrpc::Result<()> {
+    pub async fn inline_value_refresh(&self) -> JsonRpcResult<()> {
         self.send_request::<InlineValueRefreshRequest>(()).await
     }
 
@@ -311,7 +308,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.17.0.
-    pub async fn inlay_hint_refresh(&self) -> jsonrpc::Result<()> {
+    pub async fn inlay_hint_refresh(&self) -> JsonRpcResult<()> {
         self.send_request::<InlayHintRefreshRequest>(()).await
     }
 
@@ -334,7 +331,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.17.0.
-    pub async fn workspace_diagnostic_refresh(&self) -> jsonrpc::Result<()> {
+    pub async fn workspace_diagnostic_refresh(&self) -> JsonRpcResult<()> {
         self.send_request::<WorkspaceDiagnosticRefresh>(()).await
     }
 
@@ -382,10 +379,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.6.0.
-    pub async fn configuration(
-        &self,
-        items: Vec<ConfigurationItem>,
-    ) -> jsonrpc::Result<Vec<Value>> {
+    pub async fn configuration(&self, items: Vec<ConfigurationItem>) -> JsonRpcResult<Vec<Value>> {
         self.send_request::<WorkspaceConfiguration>(ConfigurationParams { items })
             .await
     }
@@ -409,7 +403,7 @@ impl Client {
     /// # Compatibility
     ///
     /// This request was introduced in specification version 3.6.0.
-    pub async fn workspace_folders(&self) -> jsonrpc::Result<Option<Vec<WorkspaceFolder>>> {
+    pub async fn workspace_folders(&self) -> JsonRpcResult<Option<Vec<WorkspaceFolder>>> {
         self.send_request::<WorkspaceFoldersRequest>(()).await
     }
 
@@ -429,7 +423,7 @@ impl Client {
     pub async fn apply_edit(
         &self,
         edit: WorkspaceEdit,
-    ) -> jsonrpc::Result<ApplyWorkspaceEditResponse> {
+    ) -> JsonRpcResult<ApplyWorkspaceEditResponse> {
         self.send_request::<ApplyWorkspaceEdit>(ApplyWorkspaceEditParams { edit, label: None })
             .await
     }
@@ -469,7 +463,7 @@ impl Client {
     /// immediately return `Err` with JSON-RPC error code `-32002` ([read more]).
     ///
     /// [read more]: https://microsoft.github.io/language-server-protocol/specification#initialize
-    pub async fn send_request<R>(&self, params: R::Params) -> jsonrpc::Result<R::Result>
+    pub async fn send_request<R>(&self, params: R::Params) -> JsonRpcResult<R::Result>
     where
         R: lsp_types::request::Request,
     {
@@ -479,11 +473,11 @@ impl Client {
             let id = self.inner.request_id.load(Ordering::SeqCst) as i64 + 1;
             let msg = Request::from_request::<R>(id.into(), params);
             trace!("server not initialized, supressing message: {}", msg);
-            Err(jsonrpc::not_initialized_error())
+            Err(tower_lsp_json_rpc::not_initialized_error())
         }
     }
 
-    async fn send_request_unchecked<R>(&self, params: R::Params) -> jsonrpc::Result<R::Result>
+    async fn send_request_unchecked<R>(&self, params: R::Params) -> JsonRpcResult<R::Result>
     where
         R: lsp_types::request::Request,
     {

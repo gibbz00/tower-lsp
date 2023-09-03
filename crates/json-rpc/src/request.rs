@@ -51,7 +51,7 @@ impl Request {
     /// Panics if `params` could not be serialized into a [`serde_json::Value`]. Since the
     /// [`lsp_types::request::Request`] trait promises this invariant is upheld, this should never
     /// happen in practice (unless the trait was implemented incorrectly).
-    pub(crate) fn from_request<R>(id: Id, params: R::Params) -> Self
+    pub fn from_request<R>(id: Id, params: R::Params) -> Self
     where
         R: lsp_types::request::Request,
     {
@@ -70,7 +70,7 @@ impl Request {
     /// Panics if `params` could not be serialized into a [`serde_json::Value`]. Since the
     /// [`lsp_types::notification::Notification`] trait promises this invariant is upheld, this
     /// should never happen in practice (unless the trait was implemented incorrectly).
-    pub(crate) fn from_notification<N>(params: N::Params) -> Self
+    pub fn from_notification<N>(params: N::Params) -> Self
     where
         N: lsp_types::notification::Notification,
     {

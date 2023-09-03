@@ -1,11 +1,9 @@
 //! A subset of JSON-RPC types used by the Language Server Protocol.
 
-pub(crate) use self::error::not_initialized_error;
-pub use self::error::{Error, ErrorCode, Result};
+pub use self::error::{not_initialized_error, Error, ErrorCode, Result};
 pub use self::request::{Request, RequestBuilder};
 pub use self::response::Response;
-pub(crate) use self::router::Router;
-pub use self::router::{FromParams, IntoResponse, Method};
+pub use self::router::{FromParams, IntoResponse, Method, Router};
 
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -112,7 +110,7 @@ impl Serialize for Version {
 #[derive(Deserialize, Serialize)]
 #[cfg_attr(test, derive(Debug, PartialEq))]
 #[serde(untagged)]
-pub(crate) enum Message {
+pub enum Message {
     /// A response message.
     Response(Response),
     /// A request or notification message.

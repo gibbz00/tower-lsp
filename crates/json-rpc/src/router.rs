@@ -13,9 +13,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tower::{util::BoxService, Layer, Service};
 
-use crate::jsonrpc::ErrorCode;
-
-use super::{Error, Id, Request, Response};
+use super::{Error, ErrorCode, Id, Request, Response};
 
 /// A modular JSON-RPC 2.0 request router service.
 pub struct Router<S, E = Infallible> {
