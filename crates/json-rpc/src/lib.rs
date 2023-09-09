@@ -72,8 +72,12 @@ impl From<NumberOrString> for Id {
     }
 }
 
+/// The language server protocol always uses “2.0” as the jsonrpc version. [`abstractMessage`]
+///
+/// [`abstractMessage`]: https://microsoft.github.io/language-server-protocol/specification#abstractMessage
 #[derive(Clone, Debug, PartialEq)]
 struct Version;
+const JSON_RPC_VERSION_STR: &str = "2.0";
 
 impl<'de> Deserialize<'de> for Version {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -86,8 +90,10 @@ impl<'de> Deserialize<'de> for Version {
         let Inner(ver) = Inner::deserialize(deserializer)?;
 
         match ver.as_ref() {
-            "2.0" => Ok(Version),
-            _ => Err(de::Error::custom("expected JSON-RPC version \"2.0\"")),
+            JSON_RPC_VERSION_STR => Ok(Version),
+            _ => Err(de::Error::custom(format!(
+                "expected JSON-RPC version \"{JSON_RPC_VERSION_STR}\""
+            ))),
         }
     }
 }
@@ -97,7 +103,7 @@ impl Serialize for Version {
     where
         S: Serializer,
     {
-        serializer.serialize_str("2.0")
+        serializer.serialize_str(JSON_RPC_VERSION_STR)
     }
 }
 
