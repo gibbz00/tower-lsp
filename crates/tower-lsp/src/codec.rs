@@ -118,17 +118,7 @@ impl<T: Serialize> Encoder for LanguageServerCodec<T> {
     type Error = ParseError;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let msg = serde_json::to_string(&item)?;
-        trace!("-> {}", msg);
-
-        // Reserve just enough space to hold the `Content-Length: ` and `\r\n\r\n` constants,
-        // the length of the message, and the message body.
-        dst.reserve(msg.len() + number_of_digits(msg.len()) + 20);
-        let mut writer = dst.writer();
-        write!(writer, "Content-Length: {}\r\n\r\n{}", msg.len(), msg)?;
-        writer.flush()?;
-
-        Ok(())
+        encode_impl(item, dst)
     }
 }
 
@@ -137,18 +127,22 @@ impl<T: Serialize> Encoder<T> for LanguageServerCodec<T> {
     type Error = ParseError;
 
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let msg = serde_json::to_string(&item)?;
-        trace!("-> {}", msg);
-
-        // Reserve just enough space to hold the `Content-Length: ` and `\r\n\r\n` constants,
-        // the length of the message, and the message body.
-        dst.reserve(msg.len() + number_of_digits(msg.len()) + 20);
-        let mut writer = dst.writer();
-        write!(writer, "Content-Length: {}\r\n\r\n{}", msg.len(), msg)?;
-        writer.flush()?;
-
-        Ok(())
+        encode_impl(item, dst)
     }
+}
+
+fn encode_impl<T: Serialize>(item: T, dst: &mut BytesMut) -> Result<(), ParseError> {
+    let msg = serde_json::to_string(&item)?;
+    trace!("-> {}", msg);
+
+    // Reserve just enough space to hold the `Content-Length: ` and `\r\n\r\n` constants,
+    // the length of the message, and the message body.
+    dst.reserve(msg.len() + number_of_digits(msg.len()) + 20);
+    let mut writer = dst.writer();
+    write!(writer, "Content-Length: {}\r\n\r\n{}", msg.len(), msg)?;
+    writer.flush()?;
+
+    Ok(())
 }
 
 fn number_of_digits(mut n: usize) -> usize {
