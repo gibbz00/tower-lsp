@@ -100,7 +100,7 @@ impl Display for ErrorCode {
 }
 
 /// A JSON-RPC error object.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Error {
     /// A number indicating the error type that occurred.

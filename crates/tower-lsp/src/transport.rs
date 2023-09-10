@@ -17,7 +17,7 @@ use tracing::error;
 
 use crate::codec::{LanguageServerCodec, ParseError};
 use crate::service::{ClientRequestStream, ClientResponseSink, ClientSocket};
-use tower_lsp_json_rpc::{Error, Id, Message, Request, Response};
+use tower_lsp_json_rpc::{Error, Id, Message, RequestMessage, ResponseMessage};
 
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
 const MESSAGE_QUEUE_SIZE: usize = 100;
@@ -27,9 +27,9 @@ const MESSAGE_QUEUE_SIZE: usize = 100;
 /// This socket handles the server-to-client half of the bidirectional communication stream.
 pub trait Loopback {
     /// Yields a stream of pending server-to-client requests.
-    type RequestStream: Stream<Item = Request>;
+    type RequestStream: Stream<Item = RequestMessage>;
     /// Routes client-to-server responses back to the server.
-    type ResponseSink: Sink<Response> + Unpin;
+    type ResponseSink: Sink<ResponseMessage> + Unpin;
 
     /// Splits this socket into two halves capable of operating independently.
     ///
@@ -61,7 +61,7 @@ where
     I: AsyncRead + Unpin,
     O: AsyncWrite,
     L: Loopback,
-    <L::ResponseSink as Sink<Response>>::Error: std::error::Error,
+    <L::ResponseSink as Sink<ResponseMessage>>::Error: std::error::Error,
 {
     /// Creates a new `Server` with the given `stdin` and `stdout` handles.
     pub fn new(stdin: I, stdout: O, socket: L) -> Self {
@@ -101,7 +101,7 @@ where
     /// Spawns the service with messages read through `stdin` and responses written to `stdout`.
     pub async fn serve<T>(self, mut service: T)
     where
-        T: Service<Request, Response = Option<Response>> + Send + 'static,
+        T: Service<RequestMessage, Response = Option<ResponseMessage>> + Send + 'static,
         T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         T::Future: Send,
     {
@@ -157,7 +157,7 @@ where
                     }
                     Err(err) => {
                         error!("failed to decode message: {}", err);
-                        let res = Response::from_error(Id::Null, to_jsonrpc_error(err));
+                        let res = ResponseMessage::from_error(Id::Null, to_jsonrpc_error(err));
                         service_responses_tx
                             .send(Message::Response(res))
                             .await
@@ -219,8 +219,8 @@ mod tests {
     #[derive(Debug)]
     struct MockService;
 
-    impl Service<Request> for MockService {
-        type Response = Option<Response>;
+    impl Service<RequestMessage> for MockService {
+        type Response = Option<ResponseMessage>;
         type Error = String;
         type Future = Ready<Result<Self::Response, Self::Error>>;
 
@@ -228,17 +228,17 @@ mod tests {
             Poll::Ready(Ok(()))
         }
 
-        fn call(&mut self, _: Request) -> Self::Future {
+        fn call(&mut self, _: RequestMessage) -> Self::Future {
             let response = serde_json::from_str(RESPONSE).unwrap();
             future::ok(Some(response))
         }
     }
 
-    struct MockLoopback(Vec<Request>);
+    struct MockLoopback(Vec<RequestMessage>);
 
     impl Loopback for MockLoopback {
-        type RequestStream = stream::Iter<std::vec::IntoIter<Request>>;
-        type ResponseSink = sink::Drain<Response>;
+        type RequestStream = stream::Iter<std::vec::IntoIter<RequestMessage>>;
+        type ResponseSink = sink::Drain<ResponseMessage>;
 
         fn split(self) -> (Self::RequestStream, Self::ResponseSink) {
             (stream::iter(self.0), sink::drain())

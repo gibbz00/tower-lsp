@@ -15,7 +15,8 @@ use tower::Service;
 
 use crate::LanguageServer;
 use tower_lsp_json_rpc::{
-    Error, ErrorCode, FromParams, IntoResponse, Method, Request, Response, Router,
+    Error, ErrorCode, FromParams, IntoResponse, Method, RequestMessage, RequestRouter,
+    ResponseMessage,
 };
 
 pub(crate) mod layers;
@@ -54,7 +55,7 @@ impl Display for ExitedError {
 /// [`exit`]: https://microsoft.github.io/language-server-protocol/specification#exit
 #[derive(Debug)]
 pub struct LspService<S> {
-    inner: Router<S, ExitedError>,
+    inner: RequestRouter<S, ExitedError>,
     state: Arc<ServerState>,
 }
 
@@ -78,7 +79,7 @@ impl<S: LanguageServer> LspService<S> {
         let state = Arc::new(ServerState::new());
 
         let (client, socket) = Client::new(state.clone());
-        let inner = Router::new(init(client.clone()));
+        let inner = RequestRouter::new(init(client.clone()));
         let pending = Arc::new(Pending::new());
 
         LspServiceBuilder {
@@ -100,8 +101,8 @@ impl<S: LanguageServer> LspService<S> {
     }
 }
 
-impl<S: LanguageServer> Service<Request> for LspService<S> {
-    type Response = Option<Response>;
+impl<S: LanguageServer> Service<RequestMessage> for LspService<S> {
+    type Response = Option<ResponseMessage>;
     type Error = ExitedError;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -113,7 +114,7 @@ impl<S: LanguageServer> Service<Request> for LspService<S> {
         }
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         if self.state.get() == State::Exited {
             return future::err(ExitedError(())).boxed();
         }
@@ -139,7 +140,7 @@ impl<S: LanguageServer> Service<Request> for LspService<S> {
 ///
 /// To construct an `LspServiceBuilder`, refer to [`LspService::build`].
 pub struct LspServiceBuilder<S> {
-    inner: Router<S, ExitedError>,
+    inner: RequestRouter<S, ExitedError>,
     state: Arc<ServerState>,
     pending: Arc<Pending>,
     socket: ClientSocket,
@@ -220,7 +221,7 @@ impl<S: LanguageServer> LspServiceBuilder<S> {
         F: for<'a> Method<&'a S, P, R> + Clone + Send + Sync + 'static,
     {
         let layer = layers::Normal::new(self.state.clone(), self.pending.clone());
-        self.inner.method(name, callback, layer);
+        self.inner.insert_method(name, callback, layer);
         self
     }
 
@@ -281,8 +282,8 @@ mod tests {
         }
     }
 
-    fn initialize_request(id: i64) -> Request {
-        Request::build("initialize")
+    fn initialize_request(id: i64) -> RequestMessage {
+        RequestMessage::build("initialize")
             .params(json!({"capabilities":{}}))
             .id(id)
             .finish()
@@ -295,11 +296,11 @@ mod tests {
         let request = initialize_request(1);
 
         let response = service.ready().await.unwrap().call(request.clone()).await;
-        let ok = Response::from_ok(1.into(), json!({"capabilities":{}}));
+        let ok = ResponseMessage::from_ok(1.into(), json!({"capabilities":{}}));
         assert_eq!(response, Ok(Some(ok)));
 
         let response = service.ready().await.unwrap().call(request).await;
-        let err = Response::from_error(1.into(), Error::invalid_request());
+        let err = ResponseMessage::from_error(1.into(), Error::invalid_request());
         assert_eq!(response, Ok(Some(err)));
     }
 
@@ -309,16 +310,16 @@ mod tests {
 
         let initialize = initialize_request(1);
         let response = service.ready().await.unwrap().call(initialize).await;
-        let ok = Response::from_ok(1.into(), json!({"capabilities":{}}));
+        let ok = ResponseMessage::from_ok(1.into(), json!({"capabilities":{}}));
         assert_eq!(response, Ok(Some(ok)));
 
-        let shutdown = Request::build("shutdown").id(1).finish();
+        let shutdown = RequestMessage::build("shutdown").id(1).finish();
         let response = service.ready().await.unwrap().call(shutdown.clone()).await;
-        let ok = Response::from_ok(1.into(), json!(null));
+        let ok = ResponseMessage::from_ok(1.into(), json!(null));
         assert_eq!(response, Ok(Some(ok)));
 
         let response = service.ready().await.unwrap().call(shutdown).await;
-        let err = Response::from_error(1.into(), Error::invalid_request());
+        let err = ResponseMessage::from_error(1.into(), Error::invalid_request());
         assert_eq!(response, Ok(Some(err)));
     }
 
@@ -326,7 +327,7 @@ mod tests {
     async fn exit_notification() {
         let (mut service, _) = LspService::new(|_| Mock);
 
-        let exit = Request::build("exit").finish();
+        let exit = RequestMessage::build("exit").finish();
         let response = service.ready().await.unwrap().call(exit.clone()).await;
         assert_eq!(response, Ok(None));
 
@@ -341,15 +342,15 @@ mod tests {
 
         let initialize = initialize_request(1);
         let response = service.ready().await.unwrap().call(initialize).await;
-        let ok = Response::from_ok(1.into(), json!({"capabilities":{}}));
+        let ok = ResponseMessage::from_ok(1.into(), json!({"capabilities":{}}));
         assert_eq!(response, Ok(Some(ok)));
 
-        let pending_request = Request::build("codeAction/resolve")
+        let pending_request = RequestMessage::build("codeAction/resolve")
             .params(json!({"title":""}))
             .id(1)
             .finish();
 
-        let cancel_request = Request::build("$/cancelRequest")
+        let cancel_request = RequestMessage::build("$/cancelRequest")
             .params(json!({"id":1i32}))
             .finish();
 
@@ -357,7 +358,7 @@ mod tests {
         let cancel_fut = service.ready().await.unwrap().call(cancel_request);
         let (pending_response, cancel_response) = futures::join!(pending_fut, cancel_fut);
 
-        let canceled = Response::from_error(1.into(), Error::request_cancelled());
+        let canceled = ResponseMessage::from_error(1.into(), Error::request_cancelled());
         assert_eq!(pending_response, Ok(Some(canceled)));
         assert_eq!(cancel_response, Ok(None));
     }
@@ -370,12 +371,15 @@ mod tests {
 
         let initialize = initialize_request(1);
         let response = service.ready().await.unwrap().call(initialize).await;
-        let ok = Response::from_ok(1.into(), json!({"capabilities":{}}));
+        let ok = ResponseMessage::from_ok(1.into(), json!({"capabilities":{}}));
         assert_eq!(response, Ok(Some(ok)));
 
-        let custom = Request::build("custom").params(123i32).id(1).finish();
+        let custom = RequestMessage::build("custom")
+            .params(123i32)
+            .id(1)
+            .finish();
         let response = service.ready().await.unwrap().call(custom).await;
-        let ok = Response::from_ok(1.into(), json!(123i32));
+        let ok = ResponseMessage::from_ok(1.into(), json!(123i32));
         assert_eq!(response, Ok(Some(ok)));
     }
 

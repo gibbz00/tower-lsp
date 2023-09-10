@@ -9,7 +9,7 @@ use futures::future::{self, Either};
 use tracing::{debug, info};
 
 use super::ExitedError;
-use tower_lsp_json_rpc::{Error, Id, Response};
+use tower_lsp_json_rpc::{Error, Id, ResponseMessage};
 
 /// A hashmap containing pending server requests, keyed by request ID.
 pub struct Pending(Arc<DashMap<Id, future::AbortHandle>>);
@@ -28,9 +28,9 @@ impl Pending {
         &self,
         id: Id,
         fut: F,
-    ) -> impl Future<Output = Result<Option<Response>, ExitedError>> + Send + 'static
+    ) -> impl Future<Output = Result<Option<ResponseMessage>, ExitedError>> + Send + 'static
     where
-        F: Future<Output = Result<Option<Response>, ExitedError>> + Send + 'static,
+        F: Future<Output = Result<Option<ResponseMessage>, ExitedError>> + Send + 'static,
     {
         if let Entry::Vacant(entry) = self.0.entry(id.clone()) {
             let (handler_fut, abort_handle) = future::abortable(fut);
@@ -44,11 +44,19 @@ impl Pending {
                 if let Ok(handler_result) = abort_result {
                     handler_result
                 } else {
-                    Ok(Some(Response::from_error(id, Error::request_cancelled())))
+                    Ok(Some(ResponseMessage::from_error(
+                        id,
+                        Error::request_cancelled(),
+                    )))
                 }
             })
         } else {
-            Either::Right(async { Ok(Some(Response::from_error(id, Error::invalid_request()))) })
+            Either::Right(async {
+                Ok(Some(ResponseMessage::from_error(
+                    id,
+                    Error::invalid_request(),
+                )))
+            })
         }
     }
 
@@ -99,11 +107,11 @@ mod tests {
         let id2 = id.clone();
         let response = pending
             .execute(id.clone(), async {
-                Ok(Some(Response::from_ok(id2, json!({}))))
+                Ok(Some(ResponseMessage::from_ok(id2, json!({}))))
             })
             .await;
 
-        assert_eq!(response, Ok(Some(Response::from_ok(id, json!({})))));
+        assert_eq!(response, Ok(Some(ResponseMessage::from_ok(id, json!({})))));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -118,7 +126,10 @@ mod tests {
         let res = handler_fut.await.expect("task panicked");
         assert_eq!(
             res,
-            Ok(Some(Response::from_error(id, Error::request_cancelled())))
+            Ok(Some(ResponseMessage::from_error(
+                id,
+                Error::request_cancelled()
+            )))
         );
     }
 }

@@ -7,10 +7,10 @@ use dashmap::{mapref::entry::Entry, DashMap};
 use futures::channel::oneshot;
 use tracing::warn;
 
-use tower_lsp_json_rpc::{Id, Response};
+use tower_lsp_json_rpc::{Id, ResponseMessage};
 
 /// A hashmap containing pending client requests, keyed by request ID.
-pub struct PendingClientRequests(DashMap<Id, Vec<oneshot::Sender<Response>>>);
+pub struct PendingClientRequests(DashMap<Id, Vec<oneshot::Sender<ResponseMessage>>>);
 
 impl PendingClientRequests {
     /// Creates a new pending client requests map.
@@ -21,7 +21,7 @@ impl PendingClientRequests {
     /// Inserts the given response into the map.
     ///
     /// The corresponding `.wait()` future will then resolve to the given value.
-    pub fn register_response(&self, r: Response) {
+    pub fn register_response(&self, r: ResponseMessage) {
         match r.id() {
             Id::Null => warn!("received response with request ID of `null`, ignoring"),
             id => match self.0.entry(id.clone()) {
@@ -44,7 +44,7 @@ impl PendingClientRequests {
     /// If the same request ID is being waited upon in multiple locations, then the incoming
     /// response will be routed to one of the callers in a first come, first served basis. To
     /// ensure correct routing of JSON-RPC requests, each identifier value used _must_ be unique.
-    pub fn await_response(&self, id: Id) -> impl Future<Output = Response> + Send + 'static {
+    pub fn await_response(&self, id: Id) -> impl Future<Output = ResponseMessage> + Send + 'static {
         let (tx, rx) = oneshot::channel();
 
         match self.0.entry(id) {
@@ -89,7 +89,7 @@ mod tests {
         let id = Id::Number(1);
         let wait_fut = pending.await_response(id.clone());
 
-        let response = Response::from_ok(id, json!({}));
+        let response = ResponseMessage::from_ok(id, json!({}));
         pending.register_response(response.clone());
 
         assert_eq!(wait_fut.await, response);
@@ -103,8 +103,8 @@ mod tests {
         let wait_fut1 = pending.await_response(id.clone());
         let wait_fut2 = pending.await_response(id.clone());
 
-        let foo = Response::from_ok(id.clone(), json!("foo"));
-        let bar = Response::from_ok(id, json!("bar"));
+        let foo = ResponseMessage::from_ok(id.clone(), json!("foo"));
+        let bar = ResponseMessage::from_ok(id, json!("bar"));
         pending.register_response(bar.clone());
         pending.register_response(foo.clone());
 

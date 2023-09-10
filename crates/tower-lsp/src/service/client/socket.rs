@@ -9,12 +9,12 @@ use futures::sink::Sink;
 use futures::stream::{FusedStream, Stream, StreamExt};
 
 use super::{ExitedError, PendingClientRequests, ServerState, State};
-use tower_lsp_json_rpc::{Request, Response};
+use tower_lsp_json_rpc::{RequestMessage, ResponseMessage};
 
 /// A loopback channel for server-to-client communication.
 #[derive(Debug)]
 pub struct ClientSocket {
-    pub(super) rx: Receiver<Request>,
+    pub(super) rx: Receiver<RequestMessage>,
     pub(super) pending: Arc<PendingClientRequests>,
     pub(super) state: Arc<ServerState>,
 }
@@ -42,12 +42,12 @@ impl ClientSocket {
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct ClientRequestStream {
-    rx: Receiver<Request>,
+    rx: Receiver<RequestMessage>,
     state: Arc<ServerState>,
 }
 
 impl Stream for ClientRequestStream {
-    type Item = Request;
+    type Item = RequestMessage;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.state.get() == State::Exited || self.rx.is_terminated() {
@@ -75,7 +75,7 @@ pub struct ClientResponseSink {
     state: Arc<ServerState>,
 }
 
-impl Sink<Response> for ClientResponseSink {
+impl Sink<ResponseMessage> for ClientResponseSink {
     type Error = ExitedError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -86,7 +86,7 @@ impl Sink<Response> for ClientResponseSink {
         }
     }
 
-    fn start_send(self: Pin<&mut Self>, response: Response) -> Result<(), Self::Error> {
+    fn start_send(self: Pin<&mut Self>, response: ResponseMessage) -> Result<(), Self::Error> {
         self.pending.register_response(response);
         Ok(())
     }

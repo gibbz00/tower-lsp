@@ -9,7 +9,7 @@ use tower::{Layer, Service};
 use tracing::{info, warn};
 
 use super::ExitedError;
-use tower_lsp_json_rpc::{not_initialized_error, Error, Id, Request, Response};
+use tower_lsp_json_rpc::{not_initialized_error, Error, Id, RequestMessage, ResponseMessage};
 
 use super::client::Client;
 use super::pending::Pending;
@@ -48,9 +48,9 @@ pub struct InitializeService<S> {
     state: Arc<ServerState>,
 }
 
-impl<S> Service<Request> for InitializeService<S>
+impl<S> Service<RequestMessage> for InitializeService<S>
 where
-    S: Service<Request, Response = Option<Response>, Error = ExitedError>,
+    S: Service<RequestMessage, Response = Option<ResponseMessage>, Error = ExitedError>,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -61,7 +61,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         if self.state.get() == State::Uninitialized {
             let state = self.state.clone();
             let fut = self.inner.call(req);
@@ -79,7 +79,8 @@ where
         } else {
             warn!("received duplicate `initialize` request, ignoring");
             let (_, id, _) = req.into_parts();
-            future::ok(id.map(|id| Response::from_error(id, Error::invalid_request()))).boxed()
+            future::ok(id.map(|id| ResponseMessage::from_error(id, Error::invalid_request())))
+                .boxed()
         }
     }
 }
@@ -117,10 +118,10 @@ pub struct ShutdownService<S> {
     state: Arc<ServerState>,
 }
 
-impl<S> Service<Request> for ShutdownService<S>
+impl<S> Service<RequestMessage> for ShutdownService<S>
 where
-    S: Service<Request, Response = Option<Response>, Error = ExitedError>,
-    S::Future: Into<BoxFuture<'static, Result<Option<Response>, S::Error>>> + Send + 'static,
+    S: Service<RequestMessage, Response = Option<ResponseMessage>, Error = ExitedError>,
+    S::Future: Into<BoxFuture<'static, Result<Option<ResponseMessage>, S::Error>>> + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -130,7 +131,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         match self.state.get() {
             State::Initialized => {
                 info!("shutdown request received, shutting down");
@@ -187,8 +188,8 @@ pub struct ExitService<S> {
     _marker: PhantomData<S>,
 }
 
-impl<S> Service<Request> for ExitService<S> {
-    type Response = Option<Response>;
+impl<S> Service<RequestMessage> for ExitService<S> {
+    type Response = Option<ResponseMessage>;
     type Error = ExitedError;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -200,7 +201,7 @@ impl<S> Service<Request> for ExitService<S> {
         }
     }
 
-    fn call(&mut self, _: Request) -> Self::Future {
+    fn call(&mut self, _: RequestMessage) -> Self::Future {
         info!("exit notification received, stopping");
         self.state.set(State::Exited);
         self.pending.cancel_all();
@@ -238,10 +239,10 @@ pub struct NormalService<S> {
     state: Arc<ServerState>,
 }
 
-impl<S> Service<Request> for NormalService<S>
+impl<S> Service<RequestMessage> for NormalService<S>
 where
-    S: Service<Request, Response = Option<Response>, Error = ExitedError>,
-    S::Future: Into<BoxFuture<'static, Result<Option<Response>, S::Error>>> + Send + 'static,
+    S: Service<RequestMessage, Response = Option<ResponseMessage>, Error = ExitedError>,
+    S::Future: Into<BoxFuture<'static, Result<Option<ResponseMessage>, S::Error>>> + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -251,7 +252,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         match self.state.get() {
             State::Initialized => self.inner.call(req),
             cur_state => {
@@ -278,9 +279,9 @@ impl<S> Cancellable<S> {
     }
 }
 
-impl<S> Service<Request> for Cancellable<S>
+impl<S> Service<RequestMessage> for Cancellable<S>
 where
-    S: Service<Request, Response = Option<Response>, Error = ExitedError>,
+    S: Service<RequestMessage, Response = Option<ResponseMessage>, Error = ExitedError>,
     S::Future: Send + 'static,
 {
     type Response = S::Response;
@@ -291,7 +292,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         match req.id().cloned() {
             Some(id) => self.pending.execute(id, self.inner.call(req)).boxed(),
             None => self.inner.call(req).boxed(),
@@ -299,14 +300,14 @@ where
     }
 }
 
-fn not_initialized_response(id: Option<Id>, server_state: State) -> Option<Response> {
+fn not_initialized_response(id: Option<Id>, server_state: State) -> Option<ResponseMessage> {
     let id = id?;
     let error = match server_state {
         State::Uninitialized | State::Initializing => not_initialized_error(),
         _ => Error::invalid_request(),
     };
 
-    Some(Response::from_error(id, error))
+    Some(ResponseMessage::from_error(id, error))
 }
 
 // TODO: Add some `tower-test` middleware tests for each middleware.

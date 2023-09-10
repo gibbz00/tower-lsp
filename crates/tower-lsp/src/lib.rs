@@ -95,10 +95,10 @@ use serde_json::Value;
 use tower_lsp_macros::rpc;
 use tracing::{error, warn};
 
-pub use tower_lsp_json_rpc::Response;
+pub use tower_lsp_json_rpc::ResponseMessage;
 pub use tower_lsp_json_rpc::{Error, ErrorCode, Result};
 pub use tower_lsp_json_rpc::{FromParams, IntoResponse, Method};
-pub use tower_lsp_json_rpc::{Request, RequestBuilder};
+pub use tower_lsp_json_rpc::{RequestBuilder, RequestMessage};
 
 mod codec;
 mod service;

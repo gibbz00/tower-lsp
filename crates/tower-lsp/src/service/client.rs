@@ -21,13 +21,15 @@ use tracing::{error, trace};
 use self::pending::PendingClientRequests;
 use super::state::{ServerState, State};
 use super::ExitedError;
-use tower_lsp_json_rpc::{self, Error, ErrorCode, Id, Request, Response, Result as JsonRpcResult};
+use tower_lsp_json_rpc::{
+    self, Error, ErrorCode, Id, RequestMessage, ResponseMessage, Result as JsonRpcResult,
+};
 
 mod pending;
 mod socket;
 
 struct ClientInner {
-    tx: Sender<Request>,
+    tx: Sender<RequestMessage>,
     request_id: AtomicU32,
     pending_requests: Arc<PendingClientRequests>,
     state: Arc<ServerState>,
@@ -440,7 +442,7 @@ impl Client {
         if let State::Initialized | State::ShutDown = self.inner.state.get() {
             self.send_notification_unchecked::<N>(params).await;
         } else {
-            let msg = Request::from_notification::<N>(params);
+            let msg = RequestMessage::from_notification::<N>(params);
             trace!("server not initialized, supressing message: {}", msg);
         }
     }
@@ -449,7 +451,7 @@ impl Client {
     where
         N: lsp_types::notification::Notification,
     {
-        let request = Request::from_notification::<N>(params);
+        let request = RequestMessage::from_notification::<N>(params);
         if self.clone().call(request).await.is_err() {
             error!("failed to send notification");
         }
@@ -471,7 +473,7 @@ impl Client {
             self.send_request_unchecked::<R>(params).await
         } else {
             let id = self.inner.request_id.load(Ordering::SeqCst) as i64 + 1;
-            let msg = Request::from_request::<R>(id.into(), params);
+            let msg = RequestMessage::new::<R>(id.into(), params);
             trace!("server not initialized, supressing message: {}", msg);
             Err(tower_lsp_json_rpc::not_initialized_error())
         }
@@ -482,7 +484,7 @@ impl Client {
         R: lsp_types::request::Request,
     {
         let id = self.next_request_id();
-        let request = Request::from_request::<R>(id, params);
+        let request = RequestMessage::new::<R>(id, params);
 
         let response = match self.clone().call(request).await {
             Ok(Some(response)) => response,
@@ -522,8 +524,8 @@ impl Debug for Client {
     }
 }
 
-impl Service<Request> for Client {
-    type Response = Option<Response>;
+impl Service<RequestMessage> for Client {
+    type Response = Option<ResponseMessage>;
     type Error = ExitedError;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -535,7 +537,7 @@ impl Service<Request> for Client {
             .map_err(|_| ExitedError(()))
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: RequestMessage) -> Self::Future {
         let mut tx = self.inner.tx.clone();
         let response_waiter = req
             .id()
@@ -564,7 +566,7 @@ mod tests {
 
     use super::*;
 
-    async fn assert_client_message<F, Fut>(f: F, expected: Request)
+    async fn assert_client_message<F, Fut>(f: F, expected: RequestMessage)
     where
         F: FnOnce(Client) -> Fut,
         Fut: Future,
@@ -584,7 +586,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn log_message() {
         let (typ, msg) = (MessageType::LOG, "foo bar".to_owned());
-        let expected = Request::from_notification::<LogMessage>(LogMessageParams {
+        let expected = RequestMessage::from_notification::<LogMessage>(LogMessageParams {
             typ,
             message: msg.clone(),
         });
@@ -595,7 +597,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn show_message() {
         let (typ, msg) = (MessageType::LOG, "foo bar".to_owned());
-        let expected = Request::from_notification::<ShowMessage>(ShowMessageParams {
+        let expected = RequestMessage::from_notification::<ShowMessage>(ShowMessageParams {
             typ,
             message: msg.clone(),
         });
@@ -606,20 +608,20 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn telemetry_event() {
         let null = json!(null);
-        let expected = Request::from_notification::<TelemetryEvent>(null.clone());
+        let expected = RequestMessage::from_notification::<TelemetryEvent>(null.clone());
         assert_client_message(|p| async move { p.telemetry_event(null).await }, expected).await;
 
         let array = json!([1, 2, 3]);
-        let expected = Request::from_notification::<TelemetryEvent>(array.clone());
+        let expected = RequestMessage::from_notification::<TelemetryEvent>(array.clone());
         assert_client_message(|p| async move { p.telemetry_event(array).await }, expected).await;
 
         let object = json!({});
-        let expected = Request::from_notification::<TelemetryEvent>(object.clone());
+        let expected = RequestMessage::from_notification::<TelemetryEvent>(object.clone());
         assert_client_message(|p| async move { p.telemetry_event(object).await }, expected).await;
 
         let other = json!("hello");
         let wrapped = Value::Array(vec![other.clone()]);
-        let expected = Request::from_notification::<TelemetryEvent>(wrapped);
+        let expected = RequestMessage::from_notification::<TelemetryEvent>(wrapped);
         assert_client_message(|p| async move { p.telemetry_event(other).await }, expected).await;
     }
 
@@ -629,7 +631,7 @@ mod tests {
         let diagnostics = vec![Diagnostic::new_simple(Default::default(), "example".into())];
 
         let params = PublishDiagnosticsParams::new(uri.clone(), diagnostics.clone(), None);
-        let expected = Request::from_notification::<PublishDiagnostics>(params);
+        let expected = RequestMessage::from_notification::<PublishDiagnostics>(params);
 
         assert_client_message(
             |p| async move { p.publish_diagnostics(uri, diagnostics, None).await },
