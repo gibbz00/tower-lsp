@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -120,14 +119,6 @@ impl Display for Request {
 
         let mut w = WriterFormatter { inner: f };
         serde_json::to_writer(&mut w, self).map_err(|_| fmt::Error)
-    }
-}
-
-impl FromStr for Request {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
     }
 }
 

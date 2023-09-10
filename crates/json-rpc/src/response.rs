@@ -1,8 +1,6 @@
-use std::fmt::{self, Debug, Formatter};
-use std::str::FromStr;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::{self, Debug, Formatter};
 
 use super::{Error, Id, Result, Version};
 
@@ -105,13 +103,5 @@ impl Debug for Response {
         };
 
         d.field("id", &self.id).finish()
-    }
-}
-
-impl FromStr for Response {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        serde_json::from_str(s)
     }
 }
