@@ -149,8 +149,8 @@ where
 
                         service_tasks_tx.send(fut).await.unwrap();
                     }
-                    Ok(Message::Response(res)) => {
-                        if let Err(err) = c_s_responses.send(res).await {
+                    Ok(Message::Response(response)) => {
+                        if let Err(err) = c_s_responses.send(response).await {
                             error!("{}", display_sources(&err));
                             return;
                         }

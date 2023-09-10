@@ -2,18 +2,10 @@ use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Id, Version};
-
-fn deserialize_some<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    T: Deserialize<'de>,
-    D: Deserializer<'de>,
-{
-    T::deserialize(deserializer).map(Some)
-}
 
 /// A JSON-RPC request or notification.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -21,10 +13,8 @@ pub struct Request {
     jsonrpc: Version,
     #[serde(default)]
     method: Cow<'static, str>,
-    #[serde(default, deserialize_with = "deserialize_some")]
     #[serde(skip_serializing_if = "Option::is_none")]
     params: Option<Value>,
-    #[serde(default, deserialize_with = "deserialize_some")]
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<Id>,
 }
