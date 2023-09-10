@@ -1,6 +1,6 @@
 //! Types for sending data to and from the language client.
 
-pub use self::socket::{ClientSocket, RequestStream, ResponseSink};
+pub use self::socket::{ClientRequestStream, ClientResponseSink, ClientSocket};
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -18,7 +18,7 @@ use serde_json::Value;
 use tower::Service;
 use tracing::{error, trace};
 
-use self::pending::Pending;
+use self::pending::PendingClientRequests;
 use super::state::{ServerState, State};
 use super::ExitedError;
 use tower_lsp_json_rpc::{self, Error, ErrorCode, Id, Request, Response, Result as JsonRpcResult};
@@ -29,7 +29,7 @@ mod socket;
 struct ClientInner {
     tx: Sender<Request>,
     request_id: AtomicU32,
-    pending: Arc<Pending>,
+    pending_requests: Arc<PendingClientRequests>,
     state: Arc<ServerState>,
 }
 
@@ -48,13 +48,13 @@ pub struct Client {
 impl Client {
     pub(super) fn new(state: Arc<ServerState>) -> (Self, ClientSocket) {
         let (tx, rx) = mpsc::channel(1);
-        let pending = Arc::new(Pending::new());
+        let pending = Arc::new(PendingClientRequests::new());
 
         let client = Client {
             inner: Arc::new(ClientInner {
                 tx,
                 request_id: AtomicU32::new(0),
-                pending: pending.clone(),
+                pending_requests: pending.clone(),
                 state: state.clone(),
             }),
         };
@@ -515,7 +515,7 @@ impl Debug for Client {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Client")
             .field("tx", &self.inner.tx)
-            .field("pending", &self.inner.pending)
+            .field("pending", &self.inner.pending_requests)
             .field("request_id", &self.inner.request_id)
             .field("state", &self.inner.state)
             .finish()
@@ -537,7 +537,10 @@ impl Service<Request> for Client {
 
     fn call(&mut self, req: Request) -> Self::Future {
         let mut tx = self.inner.tx.clone();
-        let response_waiter = req.id().cloned().map(|id| self.inner.pending.wait(id));
+        let response_waiter = req
+            .id()
+            .cloned()
+            .map(|id| self.inner.pending_requests.await_response(id));
 
         Box::pin(async move {
             if tx.send(req).await.is_err() {
@@ -572,7 +575,9 @@ mod tests {
         let (client, socket) = Client::new(state);
         f(client).await;
 
-        let messages: Vec<_> = socket.collect().await;
+        let (client_requests, _) = socket.split();
+
+        let messages: Vec<_> = client_requests.collect().await;
         assert_eq!(messages, vec![expected]);
     }
 

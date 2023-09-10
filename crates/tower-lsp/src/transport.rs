@@ -16,7 +16,7 @@ use tower::Service;
 use tracing::error;
 
 use crate::codec::{LanguageServerCodec, ParseError};
-use crate::service::{ClientSocket, RequestStream, ResponseSink};
+use crate::service::{ClientRequestStream, ClientResponseSink, ClientSocket};
 use tower_lsp_json_rpc::{Error, Id, Message, Request, Response};
 
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
@@ -38,8 +38,8 @@ pub trait Loopback {
 }
 
 impl Loopback for ClientSocket {
-    type RequestStream = RequestStream;
-    type ResponseSink = ResponseSink;
+    type RequestStream = ClientRequestStream;
+    type ResponseSink = ClientResponseSink;
 
     #[inline]
     fn split(self) -> (Self::RequestStream, Self::ResponseSink) {
@@ -105,25 +105,33 @@ where
         T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         T::Future: Send,
     {
-        let (client_requests, mut client_responses) = self.loopback.split();
-        let (client_requests, client_abort) = stream::abortable(client_requests);
-        let (mut responses_tx, responses_rx) = mpsc::channel(0);
-        let (mut server_tasks_tx, server_tasks_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+        let (s_c_requests, mut c_s_responses) = self.loopback.split();
+        let (abortable_s_c_request_stream, s_c_request_stream_abort_handle) =
+            stream::abortable(s_c_requests);
+        let (mut service_responses_tx, service_responses_rx) = mpsc::channel(0);
+        let (mut service_tasks_tx, service_tasks_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
 
         let mut framed_stdin = FramedRead::new(self.stdin, LanguageServerCodec::default());
         let framed_stdout = FramedWrite::new(self.stdout, LanguageServerCodec::default());
 
-        let process_server_tasks = server_tasks_rx
+        let process_service_tasks = service_tasks_rx
             .buffer_unordered(self.max_concurrency)
             .filter_map(future::ready)
             .map(|res| Ok(Message::Response(res)))
-            .forward(responses_tx.clone().sink_map_err(|_| unreachable!()))
+            .forward(
+                service_responses_tx
+                    .clone()
+                    .sink_map_err(|_| unreachable!()),
+            )
             .map(|_| ());
 
-        let print_output = stream::select(responses_rx, client_requests.map(Message::Request))
-            .map(Ok)
-            .forward(framed_stdout.sink_map_err(|e| error!("failed to encode message: {}", e)))
-            .map(|_| ());
+        let print_output = stream::select(
+            service_responses_rx,
+            abortable_s_c_request_stream.map(Message::Request),
+        )
+        .map(Ok)
+        .forward(framed_stdout.sink_map_err(|e| error!("failed to encode message: {}", e)))
+        .map(|_| ());
 
         let read_input = async {
             while let Some(msg) = framed_stdin.next().await {
@@ -139,10 +147,10 @@ where
                             None
                         });
 
-                        server_tasks_tx.send(fut).await.unwrap();
+                        service_tasks_tx.send(fut).await.unwrap();
                     }
                     Ok(Message::Response(res)) => {
-                        if let Err(err) = client_responses.send(res).await {
+                        if let Err(err) = c_s_responses.send(res).await {
                             error!("{}", display_sources(&err));
                             return;
                         }
@@ -150,17 +158,20 @@ where
                     Err(err) => {
                         error!("failed to decode message: {}", err);
                         let res = Response::from_error(Id::Null, to_jsonrpc_error(err));
-                        responses_tx.send(Message::Response(res)).await.unwrap();
+                        service_responses_tx
+                            .send(Message::Response(res))
+                            .await
+                            .unwrap();
                     }
                 }
             }
 
-            server_tasks_tx.disconnect();
-            responses_tx.disconnect();
-            client_abort.abort();
+            service_tasks_tx.disconnect();
+            service_responses_tx.disconnect();
+            s_c_request_stream_abort_handle.abort();
         };
 
-        join!(print_output, read_input, process_server_tasks);
+        join!(print_output, read_input, process_service_tasks);
     }
 }
 

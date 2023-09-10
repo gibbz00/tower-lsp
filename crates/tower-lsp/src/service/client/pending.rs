@@ -10,18 +10,18 @@ use tracing::warn;
 use tower_lsp_json_rpc::{Id, Response};
 
 /// A hashmap containing pending client requests, keyed by request ID.
-pub struct Pending(DashMap<Id, Vec<oneshot::Sender<Response>>>);
+pub struct PendingClientRequests(DashMap<Id, Vec<oneshot::Sender<Response>>>);
 
-impl Pending {
+impl PendingClientRequests {
     /// Creates a new pending client requests map.
     pub fn new() -> Self {
-        Pending(DashMap::new())
+        PendingClientRequests(DashMap::new())
     }
 
     /// Inserts the given response into the map.
     ///
     /// The corresponding `.wait()` future will then resolve to the given value.
-    pub fn insert(&self, r: Response) {
+    pub fn register_response(&self, r: Response) {
         match r.id() {
             Id::Null => warn!("received response with request ID of `null`, ignoring"),
             id => match self.0.entry(id.clone()) {
@@ -29,6 +29,7 @@ impl Pending {
                 Entry::Occupied(mut entry) => {
                     let tx = match entry.get().len() {
                         1 => entry.remove().remove(0),
+                        // IMPROVEMENT: might be more reasonable to use a VecDequeue
                         _ => entry.get_mut().remove(0),
                     };
 
@@ -43,7 +44,7 @@ impl Pending {
     /// If the same request ID is being waited upon in multiple locations, then the incoming
     /// response will be routed to one of the callers in a first come, first served basis. To
     /// ensure correct routing of JSON-RPC requests, each identifier value used _must_ be unique.
-    pub fn wait(&self, id: Id) -> impl Future<Output = Response> + Send + 'static {
+    pub fn await_response(&self, id: Id) -> impl Future<Output = Response> + Send + 'static {
         let (tx, rx) = oneshot::channel();
 
         match self.0.entry(id) {
@@ -61,7 +62,7 @@ impl Pending {
     }
 }
 
-impl Debug for Pending {
+impl Debug for PendingClientRequests {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         #[derive(Debug)]
         struct Waiters(usize);
@@ -83,29 +84,29 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn waits_for_client_response() {
-        let pending = Pending::new();
+        let pending = PendingClientRequests::new();
 
         let id = Id::Number(1);
-        let wait_fut = pending.wait(id.clone());
+        let wait_fut = pending.await_response(id.clone());
 
         let response = Response::from_ok(id, json!({}));
-        pending.insert(response.clone());
+        pending.register_response(response.clone());
 
         assert_eq!(wait_fut.await, response);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn routes_responses_in_fifo_order() {
-        let pending = Pending::new();
+        let pending = PendingClientRequests::new();
 
         let id = Id::Number(1);
-        let wait_fut1 = pending.wait(id.clone());
-        let wait_fut2 = pending.wait(id.clone());
+        let wait_fut1 = pending.await_response(id.clone());
+        let wait_fut2 = pending.await_response(id.clone());
 
         let foo = Response::from_ok(id.clone(), json!("foo"));
         let bar = Response::from_ok(id, json!("bar"));
-        pending.insert(bar.clone());
-        pending.insert(foo.clone());
+        pending.register_response(bar.clone());
+        pending.register_response(foo.clone());
 
         assert_eq!(wait_fut1.await, bar);
         assert_eq!(wait_fut2.await, foo);
